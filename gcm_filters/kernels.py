@@ -131,18 +131,22 @@ class IrregularLaplacianWithLandMask(BaseLaplacian):
     dys: ArrayType
     area: ArrayType
 
-    def __post_init__(self):
+    def __post_init__(self, persist=False):
         np = get_array_module(self.wet_mask)
 
         # derive wet mask for western cell edge from wet_mask at T points via
         # w_wet_mask(j,i) = wet_mask(j,i) * wet_mask(j,i-1)
         # note: wet_mask(j,i-1) corresponds to np.roll(wet_mask, +1, axis=-1)
         self.w_wet_mask = self.wet_mask * np.roll(self.wet_mask, 1, axis=-1)
+        if persist:
+            self.w_wet_mask = self.w_wet_mask.persist()
 
         # derive wet mask for southern cell edge from wet_mask at T points via
         # s_wet_mask(j,i) = wet_mask(j,i) * wet_mask(j-1,i)
         # note: wet_mask(j-1,i) corresponds to np.roll(wet_mask, +1, axis=-2)
         self.s_wet_mask = self.wet_mask * np.roll(self.wet_mask, 1, axis=-2)
+        if persist:
+            self.s_wet_mask = self.s_wet_mask.persist()
 
     def __call__(self, field: ArrayType):
         np = get_array_module(field)
