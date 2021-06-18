@@ -3,5 +3,6 @@ dask[array]
 intake-xarray
 matplotlib
 requests
+s3fs
 scipy
 xarray
