@@ -1,6 +1,6 @@
 aiohttp
 dask[array]
-intake
+intake-xarray
 matplotlib
 requests
 scipy
