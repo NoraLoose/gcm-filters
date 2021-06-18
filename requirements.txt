@@ -1,5 +1,7 @@
+aiohttp
 dask[array]
 intake
 matplotlib
+requests
 scipy
 xarray
