@@ -29,13 +29,29 @@ ALL_KERNELS = {}  # type: Dict[GridType, Any]
 
 
 @numba.stencil
-def _four_point_stencil(field):
-    return field[0, -1] + field[0, 1] + field[-1, 0] + field[1, 0]
+def _four_point_stencil_3d(field):
+    return (
+        field[0, 0, -1] 
+        + field[0, 0, 1] 
+        + field[0, -1, 0] 
+        + field[0, 1, 0]
+)
+@numba.stencil
+def _four_point_stencil_2d(field):
+    return (
+        field[0, -1] 
+        + field[0, 1] 
+        + field[-1, 0] 
+        + field[1, 0]
+)
 
 
 @numba.njit
-def four_point_stencil(field):
-    return _four_point_stencil(field)
+def four_point_stencil_3d(field):
+    return _four_point_stencil_3d(field)
+@numba.njit
+def four_point_stencil_2d(field):
+    return _four_point_stencil_2d(field)
 
 
 def _prepare_tripolar_exchanges(field):
@@ -85,7 +101,7 @@ class RegularLaplacian(BaseScalarLaplacian):
     def __call__(self, field: ArrayType):
         np = get_array_module(field)
 
-        return -4 * field + four_point_stencil(field)
+        return -4 * field + four_point_stencil_3d(field)
 
 
 ALL_KERNELS[GridType.REGULAR] = RegularLaplacian
@@ -105,7 +121,7 @@ class RegularLaplacianWithLandMask(BaseScalarLaplacian):
     def __post_init__(self):
         np = get_array_module(self.wet_mask)
 
-        self.wet_fac = four_point_stencil(self.wet_mask)
+        self.wet_fac = four_point_stencil_2d(self.wet_mask)
 
     def __call__(self, field: ArrayType):
         np = get_array_module(field)
@@ -113,7 +129,7 @@ class RegularLaplacianWithLandMask(BaseScalarLaplacian):
         out = np.nan_to_num(field)  # set all nans to zero
         out = self.wet_mask * out
 
-        out = -self.wet_fac * out + four_point_stencil(out)
+        out = -self.wet_fac * out + four_point_stencil_3d(out)
 
         out = self.wet_mask * out
         return out
