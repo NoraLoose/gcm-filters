@@ -7,6 +7,8 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Any, Dict
 
+import numba
+
 from .gpu_compat import ArrayType, get_array_module
 
 
@@ -24,6 +26,16 @@ GridType = enum.Enum(
 )
 
 ALL_KERNELS = {}  # type: Dict[GridType, Any]
+
+
+@numba.stencil
+def _four_point_stencil(field):
+    return field[0, -1] + field[0, 1] + field[-1, 0] + field[1, 0]
+
+
+@numba.njit
+def four_point_stencil(field):
+    return _four_point_stencil(field)
 
 
 def _prepare_tripolar_exchanges(field):
@@ -72,13 +84,8 @@ class RegularLaplacian(BaseScalarLaplacian):
 
     def __call__(self, field: ArrayType):
         np = get_array_module(field)
-        return (
-            -4 * field
-            + np.roll(field, -1, axis=-1)
-            + np.roll(field, 1, axis=-1)
-            + np.roll(field, -1, axis=-2)
-            + np.roll(field, 1, axis=-2)
-        )
+
+        return -4 * field + four_point_stencil(field)
 
 
 ALL_KERNELS[GridType.REGULAR] = RegularLaplacian
@@ -98,12 +105,7 @@ class RegularLaplacianWithLandMask(BaseScalarLaplacian):
     def __post_init__(self):
         np = get_array_module(self.wet_mask)
 
-        self.wet_fac = (
-            np.roll(self.wet_mask, -1, axis=-1)
-            + np.roll(self.wet_mask, 1, axis=-1)
-            + np.roll(self.wet_mask, -1, axis=-2)
-            + np.roll(self.wet_mask, 1, axis=-2)
-        )
+        self.wet_fac = four_point_stencil(self.wet_mask)
 
     def __call__(self, field: ArrayType):
         np = get_array_module(field)
@@ -111,13 +113,7 @@ class RegularLaplacianWithLandMask(BaseScalarLaplacian):
         out = np.nan_to_num(field)  # set all nans to zero
         out = self.wet_mask * out
 
-        out = (
-            -self.wet_fac * out
-            + np.roll(out, -1, axis=-1)
-            + np.roll(out, 1, axis=-1)
-            + np.roll(out, -1, axis=-2)
-            + np.roll(out, 1, axis=-2)
-        )
+        out = -self.wet_fac * out + four_point_stencil(out)
 
         out = self.wet_mask * out
         return out
