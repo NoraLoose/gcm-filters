@@ -24,7 +24,7 @@ bibliography: paper.bib
 The filter scale can be defined in several ways: a fixed length scale (e.g., 100 km), a scale tied to a model grid scale (e.g., 1$^\circ$), or a scale tied to a varying dynamical scale (e.g., the Rossby radius of deformation). As an example, \autoref{fig1} shows unfiltered and filtered relative vorticity, where the filter scale is set to a model grid scale of 4$^\circ$. `GCM-Filters` also allows for anisotropic, i.e., direction-dependent, filtering.
 Finally, the filter shape -- currently: either Gaussian or Taper -- determines how sharply the filter separates scales above and below the target filter scale.
 
-![(Left) Snapshot of unfiltered surface relative vorticity  $\zeta = \partial_x v - \partial_y u$ from a global 0.1$^\circ$ simulation with MOM6 [@mom6]. (Right) Relative vorticity filtered to 4$^\circ$, obtained by applying `GCM-Filters` to the field $\zeta$ on the left. The plots are made with `matplotlib` [@Hunter2007] and `cartopy` [@Cartopy].\label{fig1}](filtered_vorticity.png){ width=100% }
+![(Left) Snapshot of unfiltered surface relative vorticity  $\zeta = \partial_x v - \partial_y u$ from a global 0.1$^\circ$ simulation with MOM6 [@adcroft2019MOM6]. (Right) Relative vorticity filtered to 4$^\circ$, obtained by applying `GCM-Filters` to the field $\zeta$ on the left. The plots are made with `matplotlib` [@Hunter2007] and `cartopy` [@Cartopy].\label{fig1}](filtered_vorticity.png){ width=100% }
 
 # Statement of Need
 
@@ -39,8 +39,8 @@ The `GCM-Filters` algorithm [@grooms2021diffusion] applies a discrete Laplacian 
 
 The main `GCM-Filters` class that the user will interface with is the `gcm_filters.Filter` object. When creating a filter object, the user specifies how they want to smooth their data, including the desired filter shape and filter scale. At this stage, the user also picks the grid type that matches their GCM data, given a predefined list of grid types. Each grid type has an associated discrete Laplacian, and requires different *grid variables* that the user must provide (the latter are usually available to the user as part of the GCM output). Currently, `GCM-Filters` provides a number of different grid types and associated discrete Laplacians:
 
-* Grid types with **scalar Laplacians** that can be used for filtering scalar fields, for example temperature or vorticity (see \autoref{fig1}). The currently implemented grid types are compatible with different ocean GCM grids including MOM5 [@mom5], MOM6 [@mom6] and the POP2 [@pop2-cesm] tripole grid.
-* Grid types with **vector Laplacians** that can be used for filtering vector fields, for example horizontal velocity $(u,v)$. The currently implemented grid type is compatible with ocean GCM grids that use an Arakawa C-grid convention; examples include MOM6 [@mom6] and the MITgcm [@mitgcm].
+* Grid types with **scalar Laplacians** that can be used for filtering scalar fields, for example temperature or vorticity (see \autoref{fig1}). The currently implemented grid types are compatible with different ocean GCM grids including MOM5 [@mom5], MOM6 [@adcroft2019MOM6] and the POP2 [@pop2-cesm] tripole grid.
+* Grid types with **vector Laplacians** that can be used for filtering vector fields, for example horizontal velocity $(u,v)$. The currently implemented grid type is compatible with ocean GCM grids that use an Arakawa C-grid convention; examples include MOM6 [@adcroft2019MOM6] and the MITgcm [@mitgcm].
 
 Users are encouraged to contribute more grid types and Laplacians via pull requests.
 
