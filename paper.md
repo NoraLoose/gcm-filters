@@ -1,5 +1,5 @@
 ---
-title: 'GCM-Filters: A Python package for Diffusion-based Spatial Filtering of Gridded Data'
+title: 'GCM-Filters: A Python Package for Diffusion-based Spatial Filtering of Gridded Data'
 tags:
   - Python
   - ocean modeling
@@ -30,7 +30,7 @@ authors:
   - name: Jacob Steinberg
     orcid: 0000-0002-2609-6405
     affiliation: 5
-  - name: Andrew Ross
+  - name: Andrew Slavin Ross
     orcid: 0000-0002-2368-6979
     affiliation: 3
   - name: Hemant Khatri
@@ -42,6 +42,9 @@ authors:
   - name: Laure Zanna
     orcid: 0000-0002-8472-4828
     affiliation: 3
+  - name: Paige Martin
+    orcid: 0000-0003-3538-633X
+    affiliation: "2, 7"
 affiliations:
   - name: Department of Applied Mathematics, University of Colorado Boulder, Boulder, CO, USA
     index: 1
@@ -55,6 +58,8 @@ affiliations:
     index: 5
   - name: Earth, Ocean and Ecological Sciences, University of Liverpool, UK
     index: 6
+  - name: Australian National University, Canberra, Australia
+    index: 7
 
 date: 1 November 2021
 bibliography: paper.bib
@@ -63,7 +68,7 @@ bibliography: paper.bib
 
 # Summary
 
-`GCM-Filters` is a python package that allows scientists to perform spatial filtering analysis in an easy, flexible and efficient way. The package implements the filtering method that was introduced by @grooms2021diffusion. The filtering algorithm is analogous to smoothing via diffusion; hence the name *diffusion-based filters*. `GCM-Filters` can be used with either gridded observational data or gridded data that is produced by General Circulation Models (GCMs) of ocean, weather, and climate. Spatial filtering of observational or GCM data is a common analysis method in the Earth Sciences, for example to study oceanic and atmospheric motions at different spatial scales or to develop subgrid-scale parameterizations for ocean models.
+`GCM-Filters` is a python package that allows scientists to perform spatial filtering analysis in an easy, flexible and efficient way. The package implements the filtering method based on the discrete Laplacian operator that was introduced by @grooms2021diffusion. The filtering algorithm is analogous to smoothing via diffusion; hence the name *diffusion-based filters*. `GCM-Filters` can be used with either gridded observational data or gridded data that is produced by General Circulation Models (GCMs) of ocean, weather, and climate. Spatial filtering of observational or GCM data is a common analysis method in the Earth Sciences, for example to study oceanic and atmospheric motions at different spatial scales or to develop subgrid-scale parameterizations for ocean models.
 
 `GCM-Filters` provides filters that are highly configurable, with the goal to be useful for a wide range of scientific applications. The user has different options for selecting the filter scale and filter shape.
 The filter scale can be defined in several ways: a fixed length scale (e.g., 100 km), a scale tied to a model grid scale (e.g., 1$^\circ$), or a scale tied to a varying dynamical scale (e.g., the Rossby radius of deformation). As an example, \autoref{fig1} shows unfiltered and filtered relative vorticity, where the filter scale is set to a model grid scale of 4$^\circ$. `GCM-Filters` also allows for anisotropic, i.e., direction-dependent, filtering.
@@ -92,9 +97,12 @@ The main `GCM-Filters` class that the user will interface with is the `gcm_filte
 * Grid types with **vector Laplacians** that can be used for filtering vector fields, for example horizontal velocity $(u,v)$. The currently implemented grid type is compatible with ocean GCM grids that use an Arakawa C-grid convention; examples include MOM6 [@adcroft2019MOM6] and the MITgcm [@mitgcm].
 
 Atmospheric model grids are not yet supported, but could be implemented within the `GCM-Filters` package. Users are encouraged to contribute more grid types and Laplacians via pull requests.
+While we are excited to share GCM-Filters in its current beta state at version `0.1.3`, we plan to continue improving and maintaining the package for the long run and welcome new contributors from the broader community.
 
 # Acknowledgements
 
 This work was supported by the National Science Foundation grants OCE 1912302, OCE 1912325, OCE 1912332, OCE 1912420, GEO 1912357, and the NOAA grant CVP NA19OAR4310364.
+Busecke received support from the Gordon and Betty Moore Foundation.
+This research is supported in part by the generosity of Eric and Wendy Schmidt by recommendation of Schmidt Futures, as part of its Virtual Earth System Research Institute (VESRI).
 
 # References
