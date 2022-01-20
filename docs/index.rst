@@ -12,6 +12,8 @@ The package can be used for either gridded observational data or gridded data th
 Such GCM data come on complex curvilinear grids, whose geometry is respected by the GCM-Filters Laplacians.
 Through integration with `dask <https://dask.org/>`_, GCM-Filters enables parallel, out-of-core filter analysis on both CPUs and GPUs.
 
+AMS 2022 Talk <https://ocean-eddy-cpt/gcm-filters.github.io/ams22-talk/#/>
+
 Contents
 --------
 
