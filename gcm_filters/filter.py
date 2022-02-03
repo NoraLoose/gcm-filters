@@ -12,7 +12,13 @@ import xarray as xr
 from scipy import interpolate
 
 from .gpu_compat import get_array_module
-from .kernels import ALL_KERNELS, BaseScalarLaplacian, BaseVectorLaplacian, GridType
+from .kernels import (
+    ALL_KERNELS,
+    AreaWeightedMixin,
+    BaseScalarLaplacian,
+    BaseVectorLaplacian,
+    GridType,
+)
 
 
 FilterShape = enum.Enum("FilterShape", ["GAUSSIAN", "TAPER"])
@@ -20,12 +26,12 @@ FilterShape = enum.Enum("FilterShape", ["GAUSSIAN", "TAPER"])
 
 filter_params = {
     FilterShape.GAUSSIAN: {
-        1: {"n_steps_factor": 0.8, "max_filter_factor": 67},
-        2: {"n_steps_factor": 1.1, "max_filter_factor": 77},
+        1: {"offset": 0.8, "factor": 0.0, "exponent": 1, "max_filter_factor": 67},
+        2: {"offset": 1.1, "factor": 0.0, "exponent": 1, "max_filter_factor": 77},
     },
     FilterShape.TAPER: {
-        1: {"n_steps_factor": 2.8, "max_filter_factor": 19},
-        2: {"n_steps_factor": 3.9, "max_filter_factor": 20},
+        1: {"offset": 2.2, "factor": 0.6, "exponent": 2.5, "max_filter_factor": 19},
+        2: {"offset": 3.2, "factor": 0.7, "exponent": 2.7, "max_filter_factor": 20},
     },
 }
 
@@ -70,6 +76,7 @@ class FilterSpec(NamedTuple):
     is_laplacian: Iterable[bool]
     s_max: float
     p: Iterable[float]
+    n_iterations: int
 
 
 def _compute_filter_spec(
@@ -79,6 +86,7 @@ def _compute_filter_spec(
     transition_width=np.pi,
     ndim=2,
     n_steps=0,
+    n_iterations=1,
     root_tolerance=1e-8,
 ):
 
@@ -153,7 +161,7 @@ def _compute_filter_spec(
     s = np.array([y for x in s for y in x])
     is_laplacian = np.abs(s.imag / s.real) < root_tolerance
 
-    return FilterSpec(n_steps_total, s, is_laplacian, s_max, p)
+    return FilterSpec(n_steps_total, s, is_laplacian, s_max, p, n_iterations)
 
 
 def _create_filter_func(
@@ -173,19 +181,32 @@ def _create_filter_func(
         laplacian = Laplacian(**grid_vars)
         np = get_array_module(field)
         field_bar = field.copy()  # Initalize the filtering process
-        for i in range(filter_spec.n_steps_total):
-            if filter_spec.is_laplacian[i]:
-                s_l = np.real(filter_spec.s[i])
-                tendency = laplacian(field_bar)  # Compute Laplacian
-                field_bar += (1 / s_l) * tendency  # Update filtered field
-            else:
-                s_b = filter_spec.s[i]
-                temp_l = laplacian(field_bar)  # Compute Laplacian
-                temp_b = laplacian(temp_l)  # Compute Biharmonic (apply Laplacian twice)
-                field_bar += (
-                    temp_l * 2 * np.real(s_b) / np.abs(s_b) ** 2
-                    + temp_b * 1 / np.abs(s_b) ** 2
-                )
+
+        # prepare field for filtering (this multiplies by area for simple fixed factor
+        # filters, and does nothing for all other filters)
+        field_bar = laplacian.prepare(field_bar)
+
+        for n in range(filter_spec.n_iterations):
+            for i in range(filter_spec.n_steps_total):
+                if filter_spec.is_laplacian[i]:
+                    s_l = np.real(filter_spec.s[i])
+                    tendency = laplacian(field_bar)  # Compute Laplacian
+                    field_bar += (1 / s_l) * tendency  # Update filtered field
+                else:
+                    s_b = filter_spec.s[i]
+                    temp_l = laplacian(field_bar)  # Compute Laplacian
+                    temp_b = laplacian(
+                        temp_l
+                    )  # Compute Biharmonic (apply Laplacian twice)
+                    field_bar += (
+                        temp_l * 2 * np.real(s_b) / np.abs(s_b) ** 2
+                        + temp_b * 1 / np.abs(s_b) ** 2
+                    )
+
+        # finalize filtering (this divides by area for simple fixed factor filters,
+        # and does nothing for all other filters)
+        field_bar = laplacian.finalize(field_bar)
+
         return field_bar
 
     return filter_func
@@ -209,30 +230,41 @@ def _create_filter_func_vec(
         np = get_array_module(ufield)
         ufield_bar = ufield.copy()  # Initalize the filtering process
         vfield_bar = vfield.copy()  # Initalize the filtering process
-        for i in range(filter_spec.n_steps_total):
-            if filter_spec.is_laplacian[i]:
-                s_l = np.real(filter_spec.s[i])
-                (utendency, vtendency) = laplacian(
-                    ufield_bar, vfield_bar
-                )  # Compute Laplacian
-                ufield_bar += (1 / s_l) * utendency  # Update filtered ufield
-                vfield_bar += (1 / s_l) * vtendency  # Update filtered vfield
-            else:
-                s_b = filter_spec.s[i]
-                (utemp_l, vtemp_l) = laplacian(
-                    ufield_bar, vfield_bar
-                )  # Compute Laplacian
-                (utemp_b, vtemp_b) = laplacian(
-                    utemp_l, vtemp_l
-                )  # Compute Biharmonic (apply Laplacian twice)
-                ufield_bar += (
-                    utemp_l * 2 * np.real(s_b) / np.abs(s_b) ** 2
-                    + utemp_b * 1 / np.abs(s_b) ** 2
-                )
-                vfield_bar += (
-                    vtemp_l * 2 * np.real(s_b) / np.abs(s_b) ** 2
-                    + vtemp_b * 1 / np.abs(s_b) ** 2
-                )
+
+        # prepare field for filtering (this multiplies by area for simple fixed factor
+        # filters, and does nothing for all other filters)
+        (ufield_bar, vfield_bar) = laplacian.prepare(ufield_bar, vfield_bar)
+
+        for n in range(filter_spec.n_iterations):
+            for i in range(filter_spec.n_steps_total):
+                if filter_spec.is_laplacian[i]:
+                    s_l = np.real(filter_spec.s[i])
+                    (utendency, vtendency) = laplacian(
+                        ufield_bar, vfield_bar
+                    )  # Compute Laplacian
+                    ufield_bar += (1 / s_l) * utendency  # Update filtered ufield
+                    vfield_bar += (1 / s_l) * vtendency  # Update filtered vfield
+                else:
+                    s_b = filter_spec.s[i]
+                    (utemp_l, vtemp_l) = laplacian(
+                        ufield_bar, vfield_bar
+                    )  # Compute Laplacian
+                    (utemp_b, vtemp_b) = laplacian(
+                        utemp_l, vtemp_l
+                    )  # Compute Biharmonic (apply Laplacian twice)
+                    ufield_bar += (
+                        utemp_l * 2 * np.real(s_b) / np.abs(s_b) ** 2
+                        + utemp_b * 1 / np.abs(s_b) ** 2
+                    )
+                    vfield_bar += (
+                        vtemp_l * 2 * np.real(s_b) / np.abs(s_b) ** 2
+                        + vtemp_b * 1 / np.abs(s_b) ** 2
+                    )
+
+        # finalize filtering (this divides by area for simple fixed factor filters,
+        # and does nothing for all other filters)
+        (ufield_bar, vfield_bar) = laplacian.finalize(ufield_bar, vfield_bar)
+
         return (ufield_bar, vfield_bar)
 
     return filter_func_vec
@@ -251,18 +283,21 @@ class Filter:
     n_steps : int, optional
         Number of total steps in the filter (A biharmonic step counts as two steps)
         ``n_steps == 0`` means the number of steps is chosen automatically
+    n_iterations : int, optional
+        Achieve a Gaussian filter of scale L by applying n_iterations times a Gaussian filter of scale
+        L / np.sqrt(n_iterations)
     filter_shape : FilterShape
-        - ``FilterShape.GAUSSIAN``: The target filter has kernel :math:`e^{-|x/Lf|^2}`
+        - ``FilterShape.GAUSSIAN``: The target filter has shape :math:`e^{-(k filter_scale)^2/24}`
         - ``FilterShape.TAPER``: The target filter has target grid scale Lf. Smaller scales are zeroed out.
           Scales larger than ``pi * filter_scale / 2`` are left as-is. In between is a smooth transition.
     transition_width : float, optional
-        Width of the transition region in the "Taper" filter.
+        Width of the transition region in the "Taper" filter. Theoretical minimum is 1; not recommended.
     ndim : int, optional
          Laplacian is applied on a grid of dimension ndim
     grid_type : GridType
         what sort of grid we are dealing with
     grid_vars : dict
-        dictionary of extra parameters used to initialize the grid laplacian
+        dictionary of extra parameters used to initialize the grid Laplacian
 
     Attributes
     ----------
@@ -275,10 +310,39 @@ class Filter:
     transition_width: float = np.pi
     ndim: int = 2
     n_steps: int = 0
+    n_iterations: int = 1
     grid_type: GridType = GridType.REGULAR
     grid_vars: dict = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
+
+        self.Laplacian = ALL_KERNELS[self.grid_type]
+
+        # Determine whether this is simple fixed factor filter; in that case we need dx_min = 1
+        if issubclass(self.Laplacian, AreaWeightedMixin):
+            if self.dx_min != 1:
+                raise ValueError(
+                    f"Provided Laplacian is for simple fixed factor filtering, "
+                    "where transformed field is filtered on a regular grid with dx = dy = 1. "
+                    "dx_min must be set to 1."
+                )
+
+        # Check for n_iterations is < 1
+        if self.n_iterations < 1:
+            raise ValueError(
+                f"Number of intermediate filters into which the final filter is factored must be >= 1."
+            )
+
+        # Check for n_iterations != 1 with Taper
+        if self.n_iterations > 1 and self.filter_shape == FilterShape.TAPER:
+            raise ValueError(f"n_iterations must be 1 for the Taper filter shape.")
+
+        # Check if transition_width is <=1
+        if self.transition_width <= 1:
+            raise ValueError(f"Transition width must be > 1.")
+
+        # If n_iterations is > 1 then modify the filter scale
+        self.filter_scale = self.filter_scale / np.sqrt(self.n_iterations)
 
         # Get default number of steps
         filter_factor = self.filter_scale / self.dx_min
@@ -288,10 +352,13 @@ class Filter:
             else:
                 n_steps_default = self.n_steps  # For ndim>2 we don't have a default
         else:
-            n_steps_default = np.ceil(
-                filter_params[self.filter_shape][self.ndim]["n_steps_factor"]
-                * filter_factor
-            ).astype(int)
+            n_steps_factor = filter_params[self.filter_shape][self.ndim][
+                "offset"
+            ] + filter_params[self.filter_shape][self.ndim]["factor"] * (
+                (np.pi / self.transition_width)
+                ** filter_params[self.filter_shape][self.ndim]["exponent"]
+            )
+            n_steps_default = np.ceil(n_steps_factor * filter_factor).astype(int)
 
         # Set n_steps if needed and issue n_step warning, if needed
         if self.n_steps < 3:
@@ -299,8 +366,8 @@ class Filter:
 
         if self.n_steps < n_steps_default:
             warnings.warn(
-                "Warning: You have set n_steps below the default. Results might not be accurate.",
-                UserWarning,
+                "You have set n_steps below the default. Results might not be accurate.",
+                stacklevel=2,
             )
 
         # Issue numerical stability warning, if needed
@@ -309,8 +376,9 @@ class Filter:
         ]
         if filter_factor >= max_filter_factor:
             warnings.warn(
-                "Warning: Filter scale much larger than grid scale -> numerical instability possible",
-                UserWarning,
+                "Filter scale much larger than grid scale -> numerical instability possible. "
+                "More information on numerical instability can be found at https://gcm-filters.readthedocs.io/en/latest/theory.html.",
+                stacklevel=2,
             )
 
         self.filter_spec = _compute_filter_spec(
@@ -320,10 +388,10 @@ class Filter:
             self.transition_width,
             self.ndim,
             self.n_steps,
+            self.n_iterations,
         )
 
         # check that we have all the required grid aguments
-        self.Laplacian = ALL_KERNELS[self.grid_type]
 
         if not set(self.Laplacian.required_grid_args()) == set(self.grid_vars):
             raise ValueError(
@@ -344,10 +412,10 @@ class Filter:
         k = np.sqrt(s_max * (x + 1) / 2)
         if ax is None:
             fig, ax = plt.subplots()
-        ax.plot(k, F(x), "g", label="target filter", linewidth=4)
+        ax.plot(k, F(x) ** self.n_iterations, "g", label="target filter", linewidth=4)
         ax.plot(
             k,
-            np.polynomial.chebyshev.chebval(x, self.filter_spec.p),
+            np.polynomial.chebyshev.chebval(x, self.filter_spec.p) ** self.n_iterations,
             "m",
             label="approximation",
             linewidth=4,
@@ -367,14 +435,50 @@ class Filter:
         ax.grid(True)
         ax.legend()
 
-    def apply(self, field, dims):
-        """Filter a field with scalar Laplacian across the dimensions specified by dims."""
-        if not issubclass(self.Laplacian, BaseScalarLaplacian):
+    def apply(self, ds, dims):
+        """Filter an `xarray.DataArray` or `xarray.Dataset`
+        with a scalar Laplacian across the dimensions specified by `dims`.
+
+        Parameters
+        ----------
+        ds : xarray.DataArray or xarray.Dataset
+            The data to be filtered. If Dataset, filter will be applied to
+            all data variables.
+        dims : sequence of str
+            The names of the dimensions over which to apply the filter.
+            Usually this is two spatial dimensions, e.g. ``('lat', 'lon')``
+            or ``('y', 'x')``.
+
+            .. warning:: The dimension order matters! Since some filters deal
+                with anisotropic grids, the latitude dimension must appear first
+                in order to obtain the correct result.
+        """
+        if issubclass(self.Laplacian, BaseVectorLaplacian):
             raise ValueError(
                 f"Provided Laplacian {self.Laplacian} is a vector Laplacian. "
                 f"The ``.apply`` method is only suitable for scalar Laplacians."
             )
 
+        if isinstance(ds, xr.Dataset):
+            filtered = ds.copy(deep=True)
+            any_filtered = False
+            for key, var in filtered.variables.items():
+                if all(dim in var.dims for dim in dims):
+                    filtered[key] = self._apply_to_dataarray(var, dims=dims)
+                    any_filtered = True
+            if not any_filtered:
+                warnings.warn(
+                    f"No variables in the dataset had all of the given "
+                    f"dimensions ({dims}), so nothing was filtered.",
+                    stacklevel=2,
+                )
+            return filtered
+        else:
+            return self._apply_to_dataarray(ds, dims=dims)
+
+    def _apply_to_dataarray(self, field, dims):
+        """Filter an `xarray.DataArray` field with scalar Laplacian across the
+        dimensions specified by dims."""
         filter_func = _create_filter_func(self.filter_spec, self.Laplacian)
         grid_args = [self.grid_ds[name] for name in self.Laplacian.required_grid_args()]
         assert len(dims) == 2
@@ -388,10 +492,27 @@ class Filter:
             output_dtypes=[field.dtype],
             dask="parallelized",
         )
+
         return field_smooth
 
     def apply_to_vector(self, ufield, vfield, dims):
-        """Filter a vector field with vector Laplacian across the dimensions specified by dims."""
+        """Filter a vector field with vector Laplacian across the dimensions specified by dims.
+
+        Parameters
+        ----------
+        ufield : xarray.DataArray
+            The zonal component of the data to be filtered.
+        vfield : xarray.DataArray
+            The meridional component of the data to be filtered.
+        dims : sequence of str
+            The names of the dimensions over which to apply the filter.
+            Usually this is two spatial dimensions, e.g. ``('lat', 'lon')``
+            or ``('y', 'x')``.
+
+            .. warning:: The dimension order matters! Since some filters deal
+                with anisotropic grids, the latitude dimension must appear first
+                in order to obtain the correct result.
+        """
         if not issubclass(self.Laplacian, BaseVectorLaplacian):
             raise ValueError(
                 f"Provided Laplacian {self.Laplacian} is a scalar Laplacian. "
@@ -412,4 +533,5 @@ class Filter:
             output_dtypes=[ufield.dtype, vfield.dtype],
             dask="parallelized",
         )
+
         return (ufield_smooth, vfield_smooth)
